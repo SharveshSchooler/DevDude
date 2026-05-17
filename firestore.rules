@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'role', 'updatedAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.role is string && data.role.size() <= 100 &&
+             (data.get('bio', '') is string && data.bio.size() <= 500) &&
+             (data.get('stack', []) is list && data.stack.size() <= 20) &&
+             (data.get('interests', []) is list && data.interests.size() <= 20) &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidProjectFile(data, userId) {
+      return data.keys().hasAll(['name', 'language', 'content', 'userId', 'updatedAt']) &&
+             data.userId == userId &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 255 &&
+             data.language is string &&
+             data.content is string && data.content.size() <= 1048576 && // 1MB limit
+             data.updatedAt == request.time;
+    }
+
+    function isValidAnalysis(data, userId) {
+      return data.keys().hasAll(['type', 'sourceCode', 'result', 'userId', 'createdAt']) &&
+             data.userId == userId &&
+             data.type in ['saga', 'explanation'] &&
+             data.sourceCode is string &&
+             data.result is string &&
+             data.createdAt == request.time;
+    }
+
+    // --- Collections ---
+
+    match /users/{userId} {
+      allow read: if true; // Publicly readable profiles for networking
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && 
+                      isValidUser(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'bio', 'stack', 'interests', 'github', 'website', 'updatedAt']);
+      
+      match /files/{fileId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProjectFile(incoming(), userId) && isValidId(fileId);
+        allow update: if isOwner(userId) && 
+                        isValidProjectFile(incoming(), userId) && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'language', 'content', 'updatedAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      match /analyses/{analysisId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAnalysis(incoming(), userId) && isValidId(analysisId);
+        // Analyses are immutable in this app
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

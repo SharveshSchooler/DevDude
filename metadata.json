@@ -1,0 +1,8 @@
+{
+  "name": "DevDude",
+  "description": "AI-powered developer collaboration and productivity platform for intelligent debugging, networking, and legacy code understanding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
